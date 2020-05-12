@@ -79,12 +79,12 @@ const Article = styled.article`
   }
 `;
 
-const IndexPage = ({ data, location }: PageProps<Data>) => {
+const IndexPage = ({ data }: PageProps<Data>) => {
   const siteTitle = data.site.siteMetadata.title;
   const posts = data.allMdx.edges;
 
   return (
-    <Layout location={location} title={siteTitle}>
+    <Layout title={siteTitle}>
       <SEO title="All posts" />
       {posts.map(({ node }) => {
         const title = node.frontmatter.title || node.fields.slug;

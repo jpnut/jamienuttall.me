@@ -3,9 +3,10 @@ import Header from './header';
 import './layout.css';
 import { Container } from './container';
 import styled from '../styled';
+import { ThemeProvider } from 'emotion-theming';
+import { theme } from '../theme';
 
 interface Props {
-  location: Location;
   title: string;
 }
 
@@ -25,17 +26,19 @@ const Footer = styled.footer`
   margin-bottom: 2rem;
 `;
 
-const Layout: React.SFC<Props> = ({ children, location: _location, title }) => {
+const Layout: React.SFC<Props> = ({ children, title }) => {
   return (
-    <Wrapper>
-      <Header siteTitle={title} />
-      <Content>
-        <main>{children}</main>
-      </Content>
-      <Footer>
-        <Container>© {new Date().getFullYear()} jamienuttall.me</Container>
-      </Footer>
-    </Wrapper>
+    <ThemeProvider theme={theme}>
+      <Wrapper>
+        <Header siteTitle={title} />
+        <Content>
+          <main>{children}</main>
+        </Content>
+        <Footer>
+          <Container>© {new Date().getFullYear()} jamienuttall.me</Container>
+        </Footer>
+      </Wrapper>
+    </ThemeProvider>
   );
 };
 
