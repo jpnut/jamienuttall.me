@@ -1,7 +1,8 @@
-<!-- AUTO-GENERATED-CONTENT:START (STARTER) -->
 <h1 align="center">
   jamienuttall.me
 </h1>
+
+[![Netlify Status](https://api.netlify.com/api/v1/badges/401ddc34-9473-46b4-a182-0e1b50d15833/deploy-status)](https://app.netlify.com/sites/jamienuttall/deploys)
 
 ## 🚀 Quick start
 1.  **Developing.**
