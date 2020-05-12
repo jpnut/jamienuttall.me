@@ -1,0 +1,199 @@
+---
+title: Combine Laravel with Typescript using Code Generation
+date: "2020-05-11T19:58:07Z"
+description: "A new package to improve the relationship between a Laravel API and a Typescript front-end application."
+---
+
+I'm a big fan of Typescript, and I try to use it wherever it makes sense to do so. For example, [this blog](https://github.com/jpnut/jamienuttall.me) is written with Typescript! Using Typescript improves my developer experience significantly. However, as with all things, it comes with it's own downsides. One of the main downsides when using Typescript in combination with Laravel is the lack of any automatically generated types for API requests and responses.
+
+This isn't great. First of all, we have the initial pain of transcribing any server-side types into our type system (e.g. a `User` interface for our User model, a `CreateUserRequest` interface containing types for email, role etc.). In addition, we have to make sure we keep our client side types in sync with our server side types. Over time, this can become a significant burden, to the point where any potential benefit through the use of Typescript is lost on maintaining the type system itself.
+
+## The Solution?
+
+There are already ways in which we could accomplish solve this problem. For example, if we decide to use GraphQL, we actually get this kind of code generation for free. In GraphQL we have to specify a schema, and tools such as [graphql-code-generator](https://graphql-code-generator.com/) exist to automate the process.
+
+But what if we don't want to use GraphQL? That's where [`laravel-typescript-codegen`](https://github.com/jpnut/laravel-typescript-codegen) can be useful. Before I talk about how to use the package, there are a couple of things worth keeping in mind:
+
+ - In order to generate any types, we need to have some source of type information.
+ - This package works by reading the type declarations of the public properties of request/response objects.
+
+In essence, this package probably won't work right off the bat unless you are already making use of Data Transfer Objects.
+
+With that disclaimer out of the way, let's take a look at a small example.
+
+## An Example
+
+In this example, we'll use the idea of a `Car` resource. The first thing we're going to need is a representation of a `Car` instance within our PHP type system. Ideally we'd probably like to use the model to source this type information, however this isn't so easy when using Eloquent.
+
+For that reason, we'll start by creating a Car Data Transfer Object. We're going to be using the `spatie/data-transfer-object` package for our DTOs - `laravel-typescript-codegen` was designed with this pattern in mind but the package is by no means essential.
+
+```php
+final class CarData extends DataTransferObject implements Responsable
+{
+    public int $id;
+
+    public string $name;
+
+    public ?ManufacturerData $manufacturer;
+
+    public Carbon $created_at;
+
+    public Carbon $updated_at;
+
+    public static fromModel(Car $car): self
+    {
+        return new self([
+            'id' => $car->getKey(),
+            'name' => $car->name,
+            'manufacturer' => $car->relationLoaded('manufacturer') && $car->manufacturer
+                ? ManufacturerData::fromModel($car->manufacturer)
+                : null,
+            'created_at' => $car->created_at,
+            'updated_at' => $car->updated_at,
+        ]);
+    }
+
+    public function toResponse($request)
+    {
+        return response()->json($this->toArray());
+    }
+}
+```
+
+You can imagine a similar definition for `ManufacturerData` too. The key thing to note here is the `toResponse` method. If we want to have a route which returns this type, then we need to ensure that the class is serialised in a predictable way which matches our type. In a real application, you would probably make use of an abstract `ResponsableDataTransferObject` class to avoid repeating this snippet.
+
+With that out of the way, we can create our resource controller.
+
+```php
+class CarController
+{
+    /**
+     * @code-gen
+     */
+    public function store(CreateCarRequest $request): CarData
+    {
+        ...
+    }
+
+    /**
+     * @code-gen
+     */
+    public function destroy(Request $request, Car $car): bool
+    {
+        ...
+    }
+
+    /**
+     * @code-gen
+     */
+    public function show(Request $request, Car $car): CarData
+    {
+        ...
+    }
+
+    /**
+     * @code-gen
+     */
+    public function index(IndexCarRequest $request): IndexCarResponseData
+    {
+        ...
+    }
+
+    /**
+     * @code-gen
+     */
+    public function update(UpdateCarRequest $request, Car $car): CarData
+    {
+        ...
+    }
+}
+
+```
+
+Note the inclusion of the `@code-gen` tag in the doc block of each method. This signifies to the package that we wish to generate types for this method. Finally, we'll take a quick look at the `CreateCarRequest` object:
+
+```php
+class CreateCarRequest extends FormRequest implements CodeGenRequest
+{
+    /**
+     * @return array
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => [
+                'required',
+                'string',
+            ],
+            'manufacturer' => [
+                'required',
+                Rule::exists(Manufacturer::class),
+            ],
+        ];
+    }
+
+    /**
+     * @code-gen-property body
+     */
+    public function data(): CreateCarData
+    {
+        return new CreateCarData([
+            'name' => $this->input('name'),
+            'manufacturer' => $this->input('manufacturer'),
+        ]);
+    }
+}
+```
+
+One should note here: we must implement `JPNut\CodeGen\Contracts\CodeGenRequest`. This indicates to the package that the request contains properties which should be generated. The package will then search for methods with the `@code-gen-property` tag. In this case we have a `body` property which will serialised and included with the request in our generated schema. Note that if we decide not to do this, the method will still be generated, but we will not gain any type information for our Request.
+ 
+Let's take a look at the (truncated) schema now:
+
+```typescript
+...
+
+export interface CreateCarData {
+    name: string;
+    manufacturer: number;
+}
+
+export interface CreateCarRequest {
+    body: CreateCarData;
+}
+
+export interface CarData {
+    id: number;
+    name: string;
+    manufacturer?: ManufacturerData;
+    created_at: string;
+    updated_at: string;
+}
+
+export const carStoreRequest = ({ body }: CreateCarRequest, options?: RequestInit) => 
+    request<CarData>(`https://localhost/cars`, {
+        method: `POST`,
+        body: JSON.stringify(body),
+        ...options
+    });
+
+...
+```
+
+And that's pretty much it! We now have a type system on our front end which is completely automated. That means that any changes to the types on our server will be mirrored on our front-end (provided we remember to run the `code-gen:generate` command). 
+
+## Wrapping up
+
+There are a few things I've glossed over which I'd like to cover in slightly more detail. First of all, you may have noticed that we've had to write our application in a slightly different way to a regular Laravel application. For example, we no longer make use of Laravel's API resources and resource collections. Instead, we favour DTOs. I personally find this to be an acceptable trade off - in fact, it's possible to replicate the majority of the functionality of API resources and collections within Data Transfer Objects. The real downside here is that since PHP lacks support for generics, we have to create classes for every type (including collections). With a larger codebase, that might not be palatable.
+
+That leads me to my next point: when does it make sense to use this package? I wrote this package whilst in the early prototyping stages of an application. I wanted to be able to quickly modify various parts of the app without having to go through the tediousness of checking and updating my typescript schema. However, there are other ways to achieve a similar result. I've already mentioned GraphQL, but another option is the [OpenAPI/Swagger spec](https://swagger.io/). If your application makes use of the OpenAPI spec, then you can already [take advantage of this](https://dev.to/wkrueger/integrating-apis-to-a-typescript-frontend-with-openapi-swagger-3521) to generate your typescript schema. I think `laravel-typescript-codegen` operates in the middleground here. Maintaining OpenAPI definitions is probably more involved, but also provides more utility in the form of documentation. It's also ideal for public APIs. However, for me, it's not something I always want to commit to early in development, and having a substitute which handles the boring stuff is ideal.
+
+Finally, a quick note on the use of doc blocks. I toyed with a few different ideas, but in the end I found doc blocks to be the most straightforward way of including routes & types. I don't think this is perfect, so I'm very much looking forward to PHP8 and [the addition of attributes](https://wiki.php.net/rfc/attributes_v2). Attributes appear to be the ideal solution to this problem:
+
+```php
+    ...
+
+    <<CodeGen>>
+    public function store(...)
+    
+    ...
+```
