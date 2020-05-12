@@ -56,7 +56,7 @@ module.exports = {
         theme_color: `#f15e18`,
         display: `minimal-ui`,
         // edit below
-        icon: `content/assets/gatsby-icon.png`,
+        icon: `content/assets/logo.png`,
       },
     },
     {
@@ -68,7 +68,7 @@ module.exports = {
         background_color: `#663399`,
         theme_color: `#663399`,
         display: `minimal-ui`,
-        icon: `content/assets/gatsby-icon.png`, // This path is relative to the root of the site.
+        icon: `content/assets/logo.png`, // This path is relative to the root of the site.
       },
     },
     `gatsby-plugin-react-helmet`,
