@@ -1,0 +1,217 @@
+---
+title: A nested filter structure for your Eloquent models
+date: "2020-05-25T17:07:31Z"
+description: "A package to help you build complex SQL queries for your resources based on user input."
+---
+
+Filtering eloquent models based on user input is not a new problem. There are already some great packages out there (such as Spatie's [`laravel-query-builder`](https://github.com/spatie/laravel-query-builder)) which attempt to solve this in a generalised fashion. Typically, these solutions are based on what I would call a 'flat' filter structure. What do I mean by 'flat'? I'll try to elaborate with an example.
+
+## Flat Filter Structures
+
+Using the `laravel-query-builder` package (the situation is bound to be similar for other packages), I can submit a request which looks something like the following:
+
+```
+// GET /users?filter[name]=john&filter[email]=gmail
+```
+
+which will result in an sql query something like this:
+
+```sql
+select * from `users` where `name` like 'john' and `email` like 'gmail'
+```
+
+Most of the time, this is more than powerful enough to allow users to filter results. However, there are occasions where we want to produce more complex queries. For instance, consider a case where we have lots of users with the name 'John'. We want to find a particular John who's last name begins with 'Sm'. How would we accomplish this given the funcionality available here? Even if it is _possible_, it's certainly not _trivial_.
+
+Now consider allowing a user to specify a filter like so:
+
+```php
+[
+    'and' => [
+        [
+            'name' => [
+                'value' => 'john',
+                'operator' => 'BEGINS',
+            ]
+        ],
+        [
+            'name' => [
+                'value' => ' sm',
+                'operator' => 'CONTAINS',
+            ]
+        ]
+    ]
+]
+```
+
+This produces an sql query as follows:
+
+```sql
+select * from `users` where `name` like 'john%' and `name` like '% sm%'
+```
+
+This is exactly what we wanted! Now we find that there are too many 'John Smith' results. Ideally, we'd like to perform the same query but exclude these results. How do we do that?
+
+```php
+[
+    'and' => [
+        [
+            'name' => [
+                'value' => 'john',
+                'operator' => 'BEGINS',
+            ]
+        ],
+        [
+            'name' => [
+                'value' => ' sm',
+                'operator' => 'CONTAINS',
+            ]
+        ],
+        [
+            'name' => [
+                'value' => 'John Smith',
+                'operator' => 'NOT',
+            ]
+        ]
+    ]
+]
+```
+
+This produces a new sql query:
+
+```sql
+select * from `users` where `name` like 'john%' and `name` like '% sm%' and `name` != 'John Smith'
+```
+
+Great! Now, we're nearly there, but we still have too many results. Let's say we also know that the last name ends with 't' or with 'p'. Can we add this? Sure!
+
+```php
+[
+    'and' => [
+        [
+            'name' => [
+                'value' => 'john',
+                'operator' => 'BEGINS',
+            ]
+        ],
+        [
+            'name' => [
+                'value' => ' sm',
+                'operator' => 'CONTAINS',
+            ]
+        ],
+        [
+            'name' => [
+                'value' => 'John Smith',
+                'operator' => 'NOT',
+            ]
+        ]
+        [
+            'or' => [
+                [
+                    'name' => [
+                        'value' => 't',
+                        'operator' => 'ENDS',
+                    ]
+                ],
+                [
+                    'name' => [
+                        'value' => 'p',
+                        'operator' => 'ENDS',
+                    ]
+                ]
+            ]
+        ]
+    ]
+]
+```
+
+This produces a new sql query:
+
+```sql
+select * from `users` where (`name` like 'john%' and `name` like '% sm%' and `name` != 'John Smith' and (`name` like '%t' or `name` like '%p'))
+```
+
+Perfect! Hopefully this is able to demonstrate the power of a nested filter structure over a typical flat structure. Now the question becomes, how do we implement this with Eloquent?
+
+## Using Eloquent Nested Filter
+
+That is where [`eloquent-nested-filter`](https://github.com/jpnut/eloquent-nested-filter) comes in. The general idea of the package is to build a tree of classes which matches the associated array structure we described above. We can then call a `filter` method on the top level which recurses through all branches and leaves to produce a single sql query.
+
+The first step is define the shape of our structure - in essence, what fields are we allowed to filter, and how are we allowed to filter them? Let's take a look at an example filter class for a `Product` model:
+
+```php
+...
+
+class ProductFilter extends \JPNut\EloquentNestedFilter\AbstractFilter
+{
+    public ?IDFilterObject $id = null;
+
+    public ?StringFilterObject $name = null;
+
+    public ?NumberFilterObject $amount = null;
+
+    public ?BooleanFilterObject $in_stock = null;
+
+    public ?DateFilterObject $created_at = null;
+
+    /** @var \App\CategoryFilter[]|null */
+    public ?array $category = null;
+}
+```
+
+First of all, note that we're extending the `JPNut\EloquentNestedFilter\AbstractFilter` class. This class provides most of the heavy lifting in terms of resolving filter objects. Secondly, note that we define filterable properties as public properties on this class. When we construct an instance of this class, we can pass through an array exactly like those shown above, and they will automatically be resolved to instances of these objects. Finally, note that whilst not explicitly defined here, we can still make use of `and` and `or` to create nested filters.
+
+How do we make use of this filter class? Easy! Let's say we want to find all products which are in stock and have an amount of more than 500. In our structure, that looks like this:
+
+```php
+[
+    'and' => [
+        [
+            'in_stock' => [
+                'value' => true,
+                'operator' => 'IS',
+            ]
+        ],
+        [
+            'amount' => [
+                'value' => 500,
+                'operator' => 'GREATER_THAN'
+            ]
+        ]
+    ]
+]
+```
+
+Assuming this is passed through as a JSON encoded string as part of a request, we can construct the filter object as follows:
+
+```php
+$filter = new ProductFilter(json_decode($request->query('filter'), true));
+```
+
+In order to filter our model, we simply pass through the base query to the `filter` method:
+
+```php
+$results = $filter->filter(Product::query())->get();
+```
+
+Of course, we can still make use of scopes etc. to constrain the query in the usual way.
+
+```php
+$results = $filter->filter(Product::query()->withTrashed())->get();
+```
+
+## Thoughts and Concerns
+
+Whenever we are working with user input, it is important to consider any potential security issues or vulnerabilities we might run into. In this case, we need to be particularly diligent because we are handling a recursively defined data structure. Therefore, without any limits, a user (malicious or otherwise) could cause significant load on our application servers by passing through a large and computationally expensive query.
+
+First of all, we can mitigate this by only exposing this particular functionality to a small subset of users. The `eloquent-nested-filter` package itself was abstracted from an application in which it was only available to a very small number of users who underwent training to make the most of the function. Of course, this alone is not enough to wave away any security concerns, but it remains an important factor nonetheless.
+
+Next, consider that it's entirely possible to limit the length of the supplied filter - simply throw an exception if the filter string exceeds some given length. This requires some fine tuning to avoid preventing genuine queries from being executed, but at the very least provides a way to eliminate the most malicious and expensive of queries.
+
+The package also provides some built in limits to the length and depth of the filter. By default, the supplied filter cannot exceed more than 10 layers in depth or 100 total filters, though it is likely that one will need to change these values to suit their needs.
+
+Finally, we may want to measure and control the _actual_ resource expenditure. Note that the above methods only provide bounds on a single query, but do not prevent an expensive query from being run repeatedly. Whilst outside the scope of this package, it is a use-case worth considering. In order to do this, we could measure the execution time of the queries and treat this time as a kind of currency. We could give users a set amount of credits in this currency for different time frames (e.g. 0.5s for every minute, 2s for every hour etc.). Then, if any of these limits are exceeded, we simply ignore subsequent queries until the timer is reset.
+
+## Conclusion
+
+You may have noticed that this is only one half of the story - how do users actually construct a query like this? In the next blog post, I'll be talking about how to make the most of this filter structure in Javascript applications. If you can't wait, or have any questions, feel free to get in touch via [email](mailto:nuttalljamie@gmail.com)!

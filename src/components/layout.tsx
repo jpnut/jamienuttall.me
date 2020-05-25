@@ -24,6 +24,12 @@ const Content = styled(Container)`
 const Footer = styled.footer`
   text-align: center;
   margin-bottom: 2rem;
+
+  a {
+    color: ${props => props.theme.colors.primary};
+    text-decoration-color: ${props => props.theme.colors.primary};
+    text-decoration: underline;
+  }
 `;
 
 const Layout: React.SFC<Props> = ({ children, title }) => {
@@ -35,7 +41,9 @@ const Layout: React.SFC<Props> = ({ children, title }) => {
           <main>{children}</main>
         </Content>
         <Footer>
-          <Container>© {new Date().getFullYear()} jamienuttall.me</Container>
+          <Container>
+            © {new Date().getFullYear()} jamienuttall.me | <a href="https://github.com/jpnut">GitHub</a>
+          </Container>
         </Footer>
       </Wrapper>
     </ThemeProvider>

@@ -46,13 +46,29 @@ const Article = styled.article`
   }
 `;
 
-const BlogPostTemplate: React.SFC<Props> = ({ data, pageContext, location }) => {
+const LinkList = styled.ul`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  list-style: none;
+  padding: 0;
+
+  a {
+    color: ${props => props.theme.colors.primary};
+    font-size: 1.1em;
+    line-height: 1.75;
+    text-decoration-color: ${props => props.theme.colors.primary};
+    text-decoration: underline;
+  }
+`;
+
+const BlogPostTemplate: React.SFC<Props> = ({ data, pageContext }) => {
   const post = data.mdx;
   const siteTitle = data.site.siteMetadata.title;
   const { previous, next } = pageContext;
 
   return (
-    <Layout location={location} title={siteTitle}>
+    <Layout title={siteTitle}>
       <SEO title={post.frontmatter.title} description={post.frontmatter.description || post.excerpt} />
       <Article>
         <header>
@@ -64,15 +80,7 @@ const BlogPostTemplate: React.SFC<Props> = ({ data, pageContext, location }) => 
       </Article>
 
       <nav>
-        <ul
-          style={{
-            display: `flex`,
-            flexWrap: `wrap`,
-            justifyContent: `space-between`,
-            listStyle: `none`,
-            padding: 0,
-          }}
-        >
+        <LinkList>
           <li>
             {previous && (
               <Link to={previous.fields.slug} rel="prev">
@@ -87,7 +95,7 @@ const BlogPostTemplate: React.SFC<Props> = ({ data, pageContext, location }) => 
               </Link>
             )}
           </li>
-        </ul>
+        </LinkList>
       </nav>
     </Layout>
   );
